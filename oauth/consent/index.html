@@ -18,7 +18,6 @@
   .muted { color: var(--muted); font-size: 15px; }
   label { display: block; font-weight: 600; margin: 18px 0 6px; }
   input { width: 100%; font: inherit; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
-  input#code { letter-spacing: 0.3em; font-size: 22px; text-align: center; }
   button { width: 100%; font: inherit; font-weight: 600; padding: 12px; border-radius: 10px; border: 0; margin-top: 14px; cursor: pointer;
            background: var(--accent); color: #fff; }
   button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
@@ -35,20 +34,18 @@
 
   <!-- Step 1: email -->
   <form id="email-step" hidden>
-    <p>Sign in to your Helping Friendly Book. We'll email you a 6-digit code.</p>
+    <p>Sign in to your Helping Friendly Book. We'll email you a sign-in link.</p>
     <label for="email">Email</label>
     <input id="email" type="email" autocomplete="email" required>
-    <button type="submit">Email me a code</button>
+    <button type="submit">Email me a link</button>
   </form>
 
-  <!-- Step 2: code -->
-  <form id="code-step" hidden>
-    <p>Enter the 6-digit code we sent to <strong id="sent-to"></strong>.</p>
-    <label for="code">Code</label>
-    <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
-    <button type="submit">Sign in</button>
+  <!-- Step 2: check email -->
+  <section id="code-step" hidden>
+    <p>Check your email at <strong id="sent-to"></strong> and click the sign-in link.</p>
+    <p class="muted">Open it on this same computer or phone. It brings you back here to finish.</p>
     <button type="button" class="secondary" id="back">Use a different email</button>
-  </form>
+  </section>
 
   <!-- Step 3: approve -->
   <section id="consent-step" hidden>
@@ -88,12 +85,18 @@
     }
     const { data } = await supabase.auth.getSession()
     if (data.session) return loadConsent()
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) loadConsent()
+    })
     status('')
     show('email-step')
     $('email').focus()
   }
 
+  let consentLoaded = false
   async function loadConsent() {
+    if (consentLoaded) return
+    consentLoaded = true
     status('')
     const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId)
     if (error) {
@@ -115,22 +118,16 @@
     e.preventDefault()
     email = $('email').value.trim()
     e.submitter.disabled = true
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
+    // The link in the email comes back to this page, authorization_id and all.
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true, emailRedirectTo: location.href },
+    })
     e.submitter.disabled = false
     if (error) return status(error.message, true)
     $('sent-to').textContent = email
     status('')
     show('code-step')
-    $('code').focus()
-  })
-
-  $('code-step').addEventListener('submit', async (e) => {
-    e.preventDefault()
-    e.submitter.disabled = true
-    const { error } = await supabase.auth.verifyOtp({ email, token: $('code').value.trim(), type: 'email' })
-    e.submitter.disabled = false
-    if (error) return status("That code didn't work. Check it, or go back and get a new one.", true)
-    loadConsent()
   })
 
   $('back').addEventListener('click', () => { status(''); show('email-step') })
